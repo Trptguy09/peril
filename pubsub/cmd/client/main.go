@@ -2,6 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -16,27 +20,35 @@ func main() {
 
 	conn, err := amqp.Dial(connStr)
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Fatalf("%v", err)
 		return
 	}
 
-	ch, err := conn.Channel()
+	username, err := gamelogic.ClientWelcome()
 	if err != nil {
-		fmt.Printf("%v", err)
-		return
+		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
-	err = pubsub.PublishJSON(
-		ch,
-		routing.ExchangePerilDirect,
-		routing.PauseKey,
-		routing.PlayingState{
-			IsPaused: true,
-		},
-	)
 
 	defer conn.Close()
+
+	exchange := routing.ExchangePerilDirect
+	queueName := routing.PauseKey + "." + username
+	routingKey := routing.PauseKey
+	queueType := amqp.Transient
+	ch, q, err := pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, pubsub.SimpleQueueType(queueType))
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+
 	defer ch.Close()
 
-	gamelogic.ClientWelcome()
+	fmt.Printf("\nConnection to %v was successful.\nPress Ctr+C to stop.", q.Name)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-sigChan
+	fmt.Printf("\nRecieved signal: %s. \nShutting down...", sig)
 
 }

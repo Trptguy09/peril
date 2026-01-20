@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+	"log"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 
@@ -19,34 +18,60 @@ func main() {
 
 	conn, err := amqp.Dial(connStr)
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Fatalf("%v", err)
 		return
 	}
 
 	ch, err := conn.Channel()
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Fatalf("%v", err)
 		return
 	}
-	err = pubsub.PublishJSON(
-		ch,
-		routing.ExchangePerilDirect,
-		routing.PauseKey,
-		routing.PlayingState{
-			IsPaused: true,
-		},
-	)
 
 	defer conn.Close()
 	defer ch.Close()
 
 	fmt.Println("Connection was successful. Press Ctr+C to stop.")
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	gamelogic.PrintServerHelp()
 
-	sig := <-sigChan
-	fmt.Printf("\nRecieved signal: %s. \nShutting down...", sig)
-	return
+	for {
+		inputSlice := gamelogic.GetInput()
+		if len(inputSlice) == 0 {
+			continue
+		}
+		cmd := inputSlice[0]
 
+		if cmd == "pause" {
+			fmt.Println("Sending a pause message")
+			err = pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilDirect,
+				routing.PauseKey,
+				routing.PlayingState{
+					IsPaused: true},
+			)
+
+			if err != nil {
+				log.Fatalf("%v", err)
+			}
+		} else if cmd == "resume" {
+			fmt.Println("Sending a resume message")
+			err = pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilDirect,
+				routing.PauseKey,
+				routing.PlayingState{
+					IsPaused: false},
+			)
+			if err != nil {
+				log.Fatalf("%v", err)
+			}
+		} else if cmd == "quit" {
+			fmt.Println("Exiting")
+			break
+		} else {
+			fmt.Println("cmd unknown")
+		}
+	}
 }

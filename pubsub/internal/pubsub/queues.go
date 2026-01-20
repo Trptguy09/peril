@@ -1,6 +1,8 @@
 package pubsub
 
 import (
+	"log"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -15,6 +17,7 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 
 	ch, err := conn.Channel()
 	if err != nil {
+		log.Printf("ERROR: Failed to open channel: %v", err) // Add logging for channel error
 		return nil, amqp.Queue{}, err
 	}
 
@@ -22,6 +25,7 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 	autoDelete := queueType == QueueTransient
 	exclusive := queueType == QueueTransient
 
+	log.Printf("DEBUG: Declaring queue '%s' with durable=%t, autoDelete=%t, exclusive=%t", queueName, durable, autoDelete, exclusive) // Keep this
 	q, err := ch.QueueDeclare(
 		queueName,
 		durable,
@@ -31,10 +35,12 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 		nil,
 	)
 	if err != nil {
-		ch.Close()
+		log.Printf("ERROR: Failed to declare queue '%s': %v", queueName, err) // Add this logging
 		return nil, amqp.Queue{}, err
 	}
+	log.Printf("DEBUG: Queue '%s' declared successfully.", q.Name) // Add this
 
+	log.Printf("DEBUG: Binding queue '%s' to exchange '%s' with key '%s'", q.Name, exchange, key) // Add this
 	err = ch.QueueBind(
 		q.Name,
 		key,
@@ -43,8 +49,10 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 		nil,
 	)
 	if err != nil {
-		ch.Close()
+		log.Printf("ERROR: Failed to bind queue '%s': %v", q.Name, err) // Add this logging
 		return nil, amqp.Queue{}, err
 	}
+	log.Printf("DEBUG: Queue '%s' bound successfully.", q.Name) // Add this
+
 	return ch, q, nil
 }
