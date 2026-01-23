@@ -7,8 +7,23 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(state routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(state)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(move)
+	}
+}
 
 func main() {
 	fmt.Println("Starting Peril client...")
@@ -26,18 +41,30 @@ func main() {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
 
+	pubchan, err := conn.Channel()
+	if err != nil {
+		fmt.Printf("%v", err)
+	}
+
+	defer pubchan.Close()
 	defer conn.Close()
 
-	exchange := routing.ExchangePerilDirect
 	queueName := routing.PauseKey + "." + username
-	routingKey := routing.PauseKey
-	queueType := amqp.Transient
-	_, _, err = pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, pubsub.SimpleQueueType(queueType))
-	if err != nil {
-		log.Fatalf("%v", err)
-		return
-	}
+
 	gs := gamelogic.NewGameState(username)
+
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.SimpleQueueType(pubsub.QueueTransient), handlerPause(gs))
+
+	if err != nil {
+		log.Fatalf("could not subscribe: %v", err)
+	}
+
+	rk := "army_moves.*"
+	qn := "army_moves." + username
+	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, qn, rk, pubsub.QueueTransient)
+	if err != nil {
+		log.Fatalf("unable to bind army_moves to user")
+	}
 
 	for {
 		words := gamelogic.GetInput()
@@ -82,10 +109,20 @@ func main() {
 
 		} else if cmd == "move" {
 
-			_, err := gs.CommandMove(words)
+			moveRK := "army_moves." + gs.GetUsername()
+			move, err := gs.CommandMove(words)
 			if err != nil {
 				fmt.Printf("%v", err)
 				continue
+			}
+
+			err = pubsub.PublishJSON(
+				pubchan,
+				routing.ExchangePerilTopic,
+				moveRK,
+				move)
+			if err != nil {
+				fmt.Printf("%v", err)
 			}
 
 			fmt.Printf("Move Successful")
