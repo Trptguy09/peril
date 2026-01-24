@@ -3,6 +3,7 @@ package pubsub
 import (
 	"log"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -32,7 +33,9 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 		autoDelete,
 		exclusive,
 		false,
-		nil,
+		amqp.Table{
+			"x-dead-letter-exchange": routing.ExchangeDeadLetter,
+		},
 	)
 	if err != nil {
 		log.Printf("ERROR: Failed to declare queue '%s': %v", queueName, err) // Add this logging
