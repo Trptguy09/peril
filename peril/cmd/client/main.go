@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -46,11 +47,11 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 	}
 }
 
-func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	return func(msg gamelogic.RecognitionOfWar) pubsub.AckType {
 		defer fmt.Print("> ")
 
-		outcome, _, _ := gs.HandleWar(msg)
+		outcome, winner, loser := gs.HandleWar(msg)
 
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
@@ -58,16 +59,39 @@ func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon:
+			if err := publishGameLog(ch, gs.GetUsername(), fmt.Sprintf("%s won a war against %s", winner, loser)); err != nil {
+				fmt.Printf("could not publish game log: %v", err)
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		case gamelogic.WarOutcomeYouWon:
+			if err := publishGameLog(ch, gs.GetUsername(), fmt.Sprintf("%s won a war against %s", winner, loser)); err != nil {
+				fmt.Printf("could not publish game log: %v", err)
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		case gamelogic.WarOutcomeDraw:
+			if err := publishGameLog(ch, gs.GetUsername(), fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)); err != nil {
+				fmt.Printf("could not publish game log: %v", err)
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		default:
 			fmt.Printf("unknown war outcome: %v", outcome)
 			return pubsub.NackDiscard
 		}
 	}
+}
+
+func publishGameLog(ch *amqp.Channel, username, logMsg string) error {
+	logRk := routing.GameLogSlug + "." + username
+
+	logMsgStruct := routing.GameLog{
+		Username:    username,
+		Message:     logMsg,
+		CurrentTime: time.Now(),
+	}
+	return pubsub.PublishGob(ch, routing.ExchangePerilTopic, logRk, logMsgStruct)
 }
 
 func main() {
@@ -110,7 +134,7 @@ func main() {
 		log.Fatalf("unable to bind army_moves to user")
 	}
 
-	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "war", routing.WarRecognitionsPrefix+".*", pubsub.SimpleQueueType(pubsub.QueueDurable), handlerWar(gs))
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "war", routing.WarRecognitionsPrefix+".*", pubsub.SimpleQueueType(pubsub.QueueDurable), handlerWar(gs, pubchan))
 	if err != nil {
 		log.Fatalf("unable to bind war_recognitions to user")
 	}
