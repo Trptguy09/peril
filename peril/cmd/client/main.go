@@ -210,21 +210,26 @@ func main() {
 
 		} else if cmd == "spam" {
 
-			if len(words) == 2 {
+			if len(words) != 2 {
+				fmt.Printf("please provide number of logs to spam\n")
+				continue
+			} else {
 				n, err := strconv.Atoi(words[1])
 				if err != nil {
 					log.Fatalf("could not convert spawn number: %v", err)
 					return
 				}
+
 				for n > 0 {
 					msg := gamelogic.GetMaliciousLog()
-					err = pubsub.PublishGob(pubchan, routing.ExchangePerilTopic, routing.GameLogSlug+"."+gs.GetUsername(), msg)
+					err = pubsub.PublishJSON(pubchan, routing.ExchangePerilTopic, routing.GameLogSlug+"."+gs.GetUsername(), msg)
 					if err != nil {
 						fmt.Printf("could not publish game log: %v", err)
 						return
 					}
 					n--
 				}
+				fmt.Printf("Sent spam logs\n")
 
 				continue
 			}
