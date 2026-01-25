@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -209,7 +210,24 @@ func main() {
 
 		} else if cmd == "spam" {
 
-			fmt.Printf("Spamming not allowed yet!")
+			if len(words) == 2 {
+				n, err := strconv.Atoi(words[1])
+				if err != nil {
+					log.Fatalf("could not convert spawn number: %v", err)
+					return
+				}
+				for n > 0 {
+					msg := gamelogic.GetMaliciousLog()
+					err = pubsub.PublishGob(pubchan, routing.ExchangePerilTopic, routing.GameLogSlug+"."+gs.GetUsername(), msg)
+					if err != nil {
+						fmt.Printf("could not publish game log: %v", err)
+						return
+					}
+					n--
+				}
+
+				continue
+			}
 
 		} else if cmd == "quit" {
 
