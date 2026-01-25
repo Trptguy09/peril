@@ -28,12 +28,22 @@ func main() {
 		return
 	}
 
-	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.QueueDurable)
+	err = pubsub.SubscribeGob[routing.GameLog](
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.QueueDurable,
+		func(msg routing.GameLog) pubsub.AckType {
+			defer gamelogic.PrintServerHelp()
+			gamelogic.WriteLog(msg)
+			return pubsub.Ack
+		},
+	)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return
 	}
-
 	defer conn.Close()
 	defer ch.Close()
 

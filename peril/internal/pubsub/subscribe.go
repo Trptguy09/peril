@@ -1,6 +1,8 @@
 package pubsub
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 
@@ -15,15 +17,15 @@ const (
 	NackDiscard
 )
 
-func SubscribeJSON[T any](
+func helperSubscribe[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
 	queuetype SimpleQueueType,
 	handler func(T) AckType,
+	unmarshaller func([]byte, *T) error,
 ) error {
-
 	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queuetype)
 	if err != nil {
 		return err
@@ -37,7 +39,7 @@ func SubscribeJSON[T any](
 		defer ch.Close()
 		for message := range newchan {
 			var target T
-			if err := json.Unmarshal(message.Body, &target); err != nil {
+			if err := unmarshaller(message.Body, &target); err != nil {
 				fmt.Println("failed to unmarshal message:", err)
 				continue
 			}
@@ -56,4 +58,38 @@ func SubscribeJSON[T any](
 		}
 	}()
 	return nil
+}
+
+func jsonUnmarshal[T any](data []byte, target *T) error {
+	return json.Unmarshal(data, target)
+}
+
+func gobUnmarshal[T any](data []byte, target *T) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	return dec.Decode(target)
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queuetype SimpleQueueType,
+	handler func(T) AckType,
+) error {
+
+	return helperSubscribe[T](conn, exchange, queueName, key, queuetype, handler, gobUnmarshal[T])
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queuetype SimpleQueueType,
+	handler func(T) AckType,
+) error {
+
+	return helperSubscribe[T](conn, exchange, queueName, key, queuetype, handler, jsonUnmarshal[T])
 }
